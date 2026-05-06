@@ -215,7 +215,7 @@ Sub ZoteroCommand(cmd As String, bringToFront As Boolean)
         name$ = ActiveDocument.name
     End If
     
-    templateVersion$ = 1
+    templateVersion$ = 2
     
     ' Set up command line arguments
     name$ = Replace(name$, """", """""")
