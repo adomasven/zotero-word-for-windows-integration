@@ -216,7 +216,6 @@ statusCode __stdcall getDocument(const wchar_t documentName[], document_t** retu
 	doc->allocatedFieldsEnd = NULL;
 	doc->allocatedFieldListsStart = NULL;
 	doc->allocatedFieldListsEnd = NULL;
-	doc->insertTextIntoNote = 0;
 
 	*returnValue = doc;
 	return STATUS_OK;
@@ -919,21 +918,19 @@ statusCode __stdcall importDocument(document_t *doc, const wchar_t fieldType[], 
 	HANDLE_EXCEPTIONS_END
 }
 
-statusCode __stdcall insertText(document_t *doc, const wchar_t htmlString[]) {
+statusCode __stdcall insertText(document_t *doc, const wchar_t htmlString[], const unsigned short noteType) {
 	HANDLE_EXCEPTIONS_BEGIN
 	setScreenUpdatingStatus(doc, false);
 
 	CSelection selection = doc->comWindow.get_Selection();
 	CRange insertRange = selection.get_Range();
-	if (doc->insertTextIntoNote && insertRange.get_StoryType() == 1) {
-		// Due to the stupid way we're handling this by inserting a field first and then un-inserting
-		// if text has to be inserted into the doc we have to re-insert a note here.
-		if (doc->insertTextIntoNote == NOTE_FOOTNOTE) {
+	if (insertRange.get_StoryType() == 1) {
+		if (noteType == NOTE_FOOTNOTE) {
 			CFootnotes notes = doc->comDoc.get_Footnotes();
 			CFootnote note = notes.Add(insertRange, covOptional, COleVariant(L""));
 			insertRange = note.get_Range();
 		}
-		else {
+		else if (noteType == NOTE_ENDNOTE) {
 			CEndnotes notes = doc->comDoc.get_Endnotes();
 			CEndnote note = notes.Add(insertRange, covOptional, COleVariant(L""));
 			insertRange = note.get_Range();
@@ -974,15 +971,18 @@ statusCode __stdcall insertText(document_t *doc, const wchar_t htmlString[]) {
 	comFont = insertRange.get_Font();
 	comFont.put_Name(fontName);
 
-	selection.put_Start(insertRange.get_End());
-	selection.put_End(insertRange.get_End());
+	// Select a range in the story where the content was inserted. Setting positions on the
+	// original selection would keep it in the main story after creating a note.
+	CRange cursorRange = insertRange.get_Duplicate();
+	cursorRange.Collapse(0 /*wdCollapseEnd*/);
+	cursorRange.Select();
 
 	return STATUS_OK;
 	HANDLE_EXCEPTIONS_END
 }
 
 statusCode __stdcall convertPlaceholdersToFields(document_t *doc, const wchar_t* placeholders[], const unsigned long nPlaceholders,
-		const unsigned short noteType, const wchar_t fieldType[], listNode_t** returnNode) {
+		const unsigned short noteTypes[], const wchar_t fieldType[], listNode_t** returnNode) {
 	HANDLE_EXCEPTIONS_BEGIN
 	bool isField = wcscmp(fieldType, L"Field") == 0;
 	bool isBookmark = wcscmp(fieldType, L"Bookmark") == 0;
@@ -1011,15 +1011,14 @@ statusCode __stdcall convertPlaceholdersToFields(document_t *doc, const wchar_t*
 			CHyperlink comLink = comLinks.Item(COleVariant(j));
 			CString linkUrl = comLink.get_Address();
 			CString placeholderID = linkUrl.Right(LINK_PLACEHOLDER_LENGTH);
-			const wchar_t *code = NULL;
-			for (long k = 0; k < nPlaceholders; k++) {
-				if (placeholderID.Find(placeholders[k]) != 0) {
-					continue;
+			long placeholderIndex = -1;
+			for (unsigned long k = 0; k < nPlaceholders; k++) {
+				if (placeholderID.Find(placeholders[k]) == 0) {
+					placeholderIndex = k;
+					break;
 				}
-				code = L"TEMP";
-				break;
 			}
-			if (code == NULL) {
+			if (placeholderIndex == -1) {
 				continue;
 			}
 			CRange insertRange = comLink.get_Range();
@@ -1028,7 +1027,7 @@ statusCode __stdcall convertPlaceholdersToFields(document_t *doc, const wchar_t*
 			if (insertRange.get_StoryType() == 1) {
 				insertRange.put_Text(L"");
 				// If inserting a note citation in the main story, we need to make a new note
-				if (noteType == NOTE_FOOTNOTE) {
+				if (noteTypes[placeholderIndex] == NOTE_FOOTNOTE) {
 					CFootnotes notes = doc->comDoc.get_Footnotes();
 					CFootnote note = notes.Add(insertRange, covOptional, COleVariant(L""));
 					// Move cursor back to main text
@@ -1039,7 +1038,7 @@ statusCode __stdcall convertPlaceholdersToFields(document_t *doc, const wchar_t*
 					// Now inserting field into note
 					insertRange = note.get_Range();
 				}
-				else if (noteType == NOTE_ENDNOTE) {
+				else if (noteTypes[placeholderIndex] == NOTE_ENDNOTE) {
 					CEndnotes notes = doc->comDoc.get_Endnotes();
 					CEndnote note = notes.Add(insertRange, covOptional, COleVariant(L""));
 					// Move cursor back to main text
@@ -1054,7 +1053,7 @@ statusCode __stdcall convertPlaceholdersToFields(document_t *doc, const wchar_t*
 
 			ENSURE_OK(insertFieldRaw(doc, fieldType, insertRange, &newField));
 			if (newField->code) free(newField->code);
-			ENSURE_OK(setCode(newField, code));
+			ENSURE_OK(setCode(newField, L"TEMP"));
 			addValueToList(newField, &fieldListStart, &fieldListEnd);
 		}
 	}

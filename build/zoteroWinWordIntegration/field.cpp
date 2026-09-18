@@ -218,7 +218,6 @@ statusCode __stdcall deleteField(field_t* field) {
 				CRange dupRange = refRange.get_Duplicate();
 				dupRange.Collapse(0);
 				dupRange.Select();
-				field->doc->insertTextIntoNote = field->noteType;
 			}
 			field->comFootnote.Delete();
 		} else if(field->noteType == NOTE_ENDNOTE) {
@@ -228,7 +227,6 @@ statusCode __stdcall deleteField(field_t* field) {
 				CRange dupRange = refRange.get_Duplicate();
 				dupRange.Collapse(0);
 				dupRange.Select();
-				field->doc->insertTextIntoNote = field->noteType;
 			}
 			field->comEndnote.Delete();
 		}

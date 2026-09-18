@@ -125,14 +125,14 @@ function init() {
 		importDocument: lib.declare("importDocument", ctypes.stdcall_abi, statusCode, document_t.ptr,
 			ctypes.jschar.ptr, ctypes.bool.ptr),
 
-		// statusCode insertText(document_t *doc, const wchar_t htmlString[]);
+		// statusCode insertText(document_t *doc, const wchar_t htmlString[], unsigned short noteType);
 		insertText: lib.declare("insertText", ctypes.stdcall_abi, statusCode, document_t.ptr,
-			ctypes.jschar.ptr),
+			ctypes.jschar.ptr, ctypes.unsigned_short),
 
 		// statusCode convertPlaceholdersToFields(document_t *doc, wchar_t* placeholders[],
-		//		unsigned long nPlaceholders, unsigned short noteType, wchar_t fieldType[], listNode_t** returnNode);
+		//		unsigned long nPlaceholders, unsigned short noteTypes[], wchar_t fieldType[], listNode_t** returnNode);
 		convertPlaceholdersToFields: lib.declare("convertPlaceholdersToFields", ctypes.stdcall_abi, statusCode, document_t.ptr,
-			ctypes.jschar.ptr.ptr, ctypes.unsigned_long, ctypes.unsigned_short,
+			ctypes.jschar.ptr.ptr, ctypes.unsigned_long, ctypes.unsigned_short.ptr,
 			ctypes.jschar.ptr, fieldListNode_t.ptr.ptr),
 
 		// statusCode convert(document_t *doc, field_t* fields[], unsigned long nFields,
@@ -359,15 +359,18 @@ Document.prototype = {
 		checkStatus(f.exportDocument(this._document_t, fieldType, importInstructions));
 	},
 
-	insertText: function(text) {
+	insertText: function(text, noteType = 0) {
 		Zotero.debug(`ZoteroWinWordIntegration: insertText`, 4);
 		checkIfFreed(this._documentStatus);
-		checkStatus(f.insertText(this._document_t, text));
+		checkStatus(f.insertText(this._document_t, text, noteType));
 	},
 
-	convertPlaceholdersToFields: async function(placeholderIDs, noteType, fieldType) {
+	convertPlaceholdersToFields: async function(placeholderIDs, noteTypes, fieldType) {
 		Zotero.debug("ZoteroWinWordIntegration: convertPlaceholdersToFields", 4);
 		checkIfFreed(this._documentStatus);
+		if (!Array.isArray(noteTypes)) {
+			noteTypes = placeholderIDs.map(() => noteTypes);
+		}
 		var cPlaceholderIDs = placeholderIDs.map(placeholderID => ctypes.jschar.array()(placeholderID));
 		var fieldListNode = new fieldListNode_t.ptr();
 		checkStatus(
@@ -375,7 +378,7 @@ Document.prototype = {
 				this._document_t,
 				ctypes.jschar.ptr.array()(cPlaceholderIDs),
 				placeholderIDs.length,
-				noteType,
+				ctypes.unsigned_short.array()(noteTypes),
 				fieldType,
 				fieldListNode.address()
 			)
